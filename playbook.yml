@@ -1,0 +1,83 @@
+- name: Install and configure Docker and dependencies
+  hosts: server
+  become: true
+  tasks:
+    - name: Install Docker and pip
+      ansible.builtin.apt: 
+        name: 
+          - docker
+          - docker-compose
+          - python3-pip
+        update_cache: true
+    - name: Install PyMySQL python package
+      ansible.builtin.pip:
+        name: PyMySQL    
+    - name: Check Docker daemon is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+
+    - name: Add Ubuntu to docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    - name: Reconnect to server after usermod
+      ansible.builtin.meta: reset_connection
+
+- name: Launch mysql database container
+  hosts: server
+  vars_files: vars.yml
+  tasks:
+    - name: Pulling MySQL Docker image
+      community.docker.docker_image:
+        name: mysql
+        source: pull
+    
+    - name: Starting MySQL docker container
+      community.docker.docker_container:
+        name: mysql-hw18
+        image: mysql
+        state: started
+        restart_policy: always
+        ports: 
+          - 3306:3306
+        env:
+            MYSQL_ROOT_PASSWORD={{MYSQL_ROOT_PASSWORD}}
+    - name: Sleep for 15 seconds and continue with play
+      ansible.builtin.wait_for:
+        timeout: 15
+      delegate_to: localhost   
+    - name: Creating database
+      community.mysql.mysql_db:
+        login_host: localhost
+        login_user: "{{MYSQL_ROOT_user}}"
+        login_password: "{{MYSQL_ROOT_PASSWORD}}"
+        name: "{{MYSQL_DATABASE}}"
+        state: present
+    - name: Creating MySQL user
+      community.mysql.mysql_user:
+         login_host: localhost
+         login_user: "{{MYSQL_ROOT_user}}"
+         login_password: "{{MYSQL_ROOT_PASSWORD}}"
+         name: "{{MYSQL_USER}}"
+         password: "{{MYSQL_PASSWORD}}"
+         priv: 
+          '{{MYSQL_DATABASE}}.*': ALL
+         state: present    
+
+    # - name: Launch mysql database container
+    #   docker_container:
+    #     name: db
+    #     image: mysql:5.7
+    #   # volumes:
+    #   #   - "{{ db_volume }}:/var/lib/mysql"
+    #     restart: true
+    #     env:
+    #       MYSQL_ROOT_PASSWORD: "{{MYSQL_ROOT_PASSWORD}}"
+    #       MYSQL_DATABASE: "{{MYSQL_DATABASE}}"
+    #       MYSQL_USER: "{{MYSQL_USER}}"
+    #       MYSQL_PASSWORD: "{{MYSQL_PASSWORD}}"
+    #     ports:
+    #       - "33306:3306"  
